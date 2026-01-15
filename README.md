@@ -179,6 +179,14 @@ docker-compose down
 
 ghmon uses a YAML configuration file (`ghmon_config.yaml`) for all settings. Create this file in your project root directory.
 
+### Configuration Template
+
+Start with the example template and update it with real tokens:
+
+```bash
+cp ghmon_config.yaml.example ghmon_config.yaml
+```
+
 ### Quick Start Configuration
 
 ```yaml
@@ -548,3 +556,13 @@ tail -f scan_results/logs/ghmon_$(date +%Y-%m-%d).log
    ```bash
    python -m ghmon_cli scan -o ORG_NAME --config ghmon_config.yaml
    ```
+
+---
+
+## 🧪 Testing
+
+Run the local test suite with:
+
+```bash
+pytest -q
+```

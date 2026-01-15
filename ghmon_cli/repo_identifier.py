@@ -117,70 +117,74 @@ class TokenPool:
         Returns:
             An available token or None if all tokens are permanently unavailable
         """
-        with self._lock:
-            current_time = datetime.now()
+        while True:
+            with self._lock:
+                current_time = datetime.now()
 
-            # Treat tokens with reset_time=None as immediately available
-            available_tokens = [
-                t for t in self.tokens
-                if t.available and (t.reset_time is None or current_time >= t.reset_time)
-            ]
+                # Treat tokens with reset_time=None as immediately available
+                available_tokens = [
+                    t for t in self.tokens
+                    if t.available and (t.reset_time is None or current_time >= t.reset_time)
+                ]
 
-            if available_tokens:
-                # Sort by remaining quota (descending) and last used time (ascending)
-                best_token = max(
-                    available_tokens,
-                    key=lambda t: (
-                        t.remaining_requests if t.remaining_requests is not None else 0,
-                        -t.reset_time.timestamp() if t.reset_time else 0  # Negative because we want least recently used
+                if available_tokens:
+                    # Sort by remaining quota (descending) and last used time (ascending)
+                    best_token = max(
+                        available_tokens,
+                        key=lambda t: (
+                            t.remaining_requests if t.remaining_requests is not None else 0,
+                            -t.reset_time.timestamp() if t.reset_time else 0  # Negative because we want least recently used
+                        )
                     )
-                )
-                best_token.reset_time = current_time
-                return best_token.token
+                    best_token.reset_time = current_time
+                    return best_token.token
 
-            # If no token is immediately available, find the one with the soonest reset time
-            future_reset_tokens = [
-                t for t in self.tokens
-                if t.reset_time and t.reset_time > current_time
-            ]
+                # If no token is immediately available, find the one with the soonest reset time
+                future_reset_tokens = [
+                    t for t in self.tokens
+                    if t.reset_time and t.reset_time > current_time
+                ]
+
+                if not future_reset_tokens:
+                    # No tokens have future reset times - they might be stuck
+                    # Try to recover by resetting available flags for tokens with past reset times
+                    recovered = False
+                    for token_state in self.tokens:
+                        if token_state.reset_time and token_state.reset_time <= current_time:
+                            token_state.available = True
+                            token_state.reset_time = current_time
+                            recovered = True
+                            logger.debug(
+                                f"Recovered token {token_state.token[:8]}... "
+                                f"was rate limited until {token_state.reset_time.strftime('%H:%M:%S')}"
+                            )
+                    if recovered:
+                        logger.info("Recovered tokens with expired reset times")
+                        continue
+
+                # Now all remaining tokens are truly future‐limited, so pick the soonest reset
+                if future_reset_tokens:
+                    soonest_reset = min(t.reset_time.timestamp() for t in future_reset_tokens if t.reset_time)
+                    wait_time = soonest_reset - current_time.timestamp()
+                    wait_time += 2.0  # 2 second buffer
+
+                    logger.info(f"All tokens rate limited. Waiting {wait_time:.1f}s for next available token")
+                else:
+                    logger.error("No token became available after waiting")
+                    return None
 
             if not future_reset_tokens:
-                # No tokens have future reset times - they might be stuck
-                # Try to recover by resetting available flags for tokens with past reset times
-                recovered = False
-                for token_state in self.tokens:
-                    if token_state.reset_time and token_state.reset_time <= current_time:
-                        token_state.available = True
-                        token_state.reset_time = current_time
-                        recovered = True
-                        logger.debug(
-                            f"Recovered token {token_state.token[:8]}... "
-                            f"was rate limited until {token_state.reset_time.strftime('%H:%M:%S')}"
-                        )
-                if recovered:
-                    logger.info("Recovered tokens with expired reset times")
-                    # Try again with recovered tokens
-                    return self.get_token()
+                return None
 
-            # Now all remaining tokens are truly future‐limited, so pick the soonest reset
-            if future_reset_tokens:
-                soonest_reset = min(t.reset_time.timestamp() for t in future_reset_tokens if t.reset_time)
-                wait_time = soonest_reset - current_time.timestamp()
-                wait_time += 2.0  # 2 second buffer
+            time.sleep(wait_time)
 
-                logger.info(f"All tokens rate limited. Waiting {wait_time:.1f}s for next available token")
-                time.sleep(wait_time)
-
+            with self._lock:
                 # After waiting, reset any token whose reset_time has passed
                 for token_state in self.tokens:
                     if token_state.reset_time and token_state.reset_time <= datetime.now():
                         token_state.available = True
                         token_state.reset_time = datetime.now()
                         return token_state.token
-
-            # If we've gotten here, something unexpected happened
-            logger.error("No token became available after waiting")
-            return None
             
     def mark_token_rate_limited(self, token: str, reset_time: datetime, remaining: int = 0, limit: int = 0) -> None:
         """

@@ -171,8 +171,8 @@ def _normalize_file_path(file_path_str: str, repo_full_name: str) -> Optional[st
     try:
         # Normalize path separators and resolve any '..' or '.' components
         normalized = os.path.normpath(file_path_str)
-        # Convert to forward slashes for consistency
-        normalized_file_path = normalized.replace(os.sep, '/')
+        # Convert to forward slashes for consistency (handle Windows-style backslashes too)
+        normalized_file_path = normalized.replace('\\', '/').replace(os.sep, '/')
 
         # Strip leading slash if present to ensure relative path
         normalized_file_path = normalized_file_path.lstrip('/')
