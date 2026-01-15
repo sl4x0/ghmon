@@ -1,5 +1,5 @@
-# ghmon-cli Configuration File
-# This file configures the behavior of the ghmon-cli secret scanning tool
+# ghmon-cli Configuration File (Example)
+# Copy this file to ghmon_config.yaml and update with your settings.
 
 # General application settings
 general:
@@ -18,6 +18,7 @@ github:
   # Required scopes: repo (for private repos) or public_repo (for public repos only)
   # tokens:
   #   - "ghp_your_github_token_here"
+  #   - "ghp_your_second_token_here"
 
 # GitLab configuration
 gitlab:
